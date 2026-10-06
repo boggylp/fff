@@ -231,7 +231,11 @@ impl SharedFilePicker {
         // for giant folders we have no other choice other than throttling rescans
         // if user is running application in millions of files with a ton of rescan events
         // we drop / throttle some of requests to avoid constant burst of IO
-        if reason == RescanReason::Explicit {
+        // A rejected update is lost unless a rescan runs, so it is never throttled.
+        if matches!(
+            reason,
+            RescanReason::Explicit | RescanReason::IndexUpdateRejected
+        ) {
             self.0.rescan_throttle.note_explicit_scan();
         } else if !self.check_rescan_throttle(reason) {
             return Ok(false);

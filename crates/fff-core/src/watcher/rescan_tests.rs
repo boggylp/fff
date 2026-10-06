@@ -438,6 +438,25 @@ fn an_explicit_request_is_never_throttled() {
 }
 
 #[test]
+fn a_rejected_index_update_is_never_throttled() {
+    let f = Fixture::new();
+    f.write("src/main.rs", "fn main() {}");
+    f.index();
+
+    let trigger = |reason| {
+        f.picker
+            .trigger_full_rescan_with_reason(&f.frecency, reason)
+            .unwrap()
+    };
+    assert!(trigger(RescanReason::KernelEventLoss));
+    assert!(!trigger(RescanReason::KernelEventLoss));
+    assert!(
+        trigger(RescanReason::IndexUpdateRejected),
+        "a rejected path is lost unless a rescan runs"
+    );
+}
+
+#[test]
 fn events_after_a_suppressed_kernel_rescan_are_still_applied() {
     let f = Fixture::new();
     f.write("src/main.rs", "fn main() {}");

@@ -865,10 +865,11 @@ fn index_new_directory(
     let added = indexed_files.len();
 
     let watch_registry = shared_picker.watch_registry();
-    // Capacity rejection cannot fall back to incremental processing if a rescan is throttled.
     let rescan_started = if index_update_rejected {
-        match shared_picker.trigger_full_rescan_async(shared_frecency) {
-            Ok(()) => {
+        match shared_picker
+            .trigger_full_rescan_with_reason(shared_frecency, RescanReason::IndexUpdateRejected)
+        {
+            Ok(_) => {
                 watch_registry.dispatch_rescan(&base_path);
                 true
             }
