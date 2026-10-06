@@ -866,16 +866,22 @@ fn index_new_directory(
 
     let watch_registry = shared_picker.watch_registry();
     // Capacity rejection cannot fall back to incremental processing if a rescan is throttled.
-    if index_update_rejected {
+    let rescan_started = if index_update_rejected {
         match shared_picker.trigger_full_rescan_async(shared_frecency) {
-            Ok(()) => watch_registry.dispatch_rescan(&base_path),
+            Ok(()) => {
+                watch_registry.dispatch_rescan(&base_path);
+                true
+            }
             Err(e) => {
                 error!(?e, dir = %dir.display(), "Failed to rescan after new-directory overflow");
+                false
             }
         }
-    }
+    } else {
+        false
+    };
 
-    if watch_registry.is_active() {
+    if !rescan_started && watch_registry.is_active() {
         let events = indexed_files
             .iter()
             .map(|path| RawWatchEvent {
@@ -889,7 +895,7 @@ fn index_new_directory(
         watch_registry.dispatch(&base_path, events);
     }
 
-    if repo.is_some() {
+    if !rescan_started && repo.is_some() {
         git_status_worker.enqueue_paths(indexed_files);
     }
 
@@ -1251,10 +1257,24 @@ mod tests {
             let guard = shared_picker.read().unwrap();
             assert!(guard.as_ref().unwrap().get_overflow_files().len() <= MAX_OVERFLOW_FILES);
         }
+        let marker = base.join("after-overflow.txt");
+        shared_picker.watch_registry().dispatch(
+            &base,
+            vec![RawWatchEvent {
+                path: marker.clone(),
+                kind: WatchEventKind::Removed,
+                is_ignored: false,
+                from: None,
+            }],
+        );
         let events = receiver.recv_timeout(Duration::from_secs(1)).unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].kind, WatchEventKind::Rescan);
         assert_eq!(events[0].path, base);
+        let next = receiver.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert_eq!(next.len(), 1);
+        assert_eq!(next[0].kind, WatchEventKind::Removed);
+        assert_eq!(next[0].path, marker);
         assert!(shared_picker.wait_for_indexing_complete(Duration::from_secs(10)));
         let guard = shared_picker.read().unwrap();
         let picker = guard.as_ref().unwrap();
